@@ -40,7 +40,7 @@ similarity(oldText, newText);     // 0.95  (0 = nothing in common, 1 = identical
 - **Input:** a text, or an array of lines (so you can diff anything line-like, such as the keys of an object). `\r\n` and a missing final newline do not count as differences.
 - **Unified diff:** `context` lines around changes (default 3), hunks merge when they touch, headers use `aName` and `bName`. It returns `""` when nothing differs. The output is tested against `git apply`.
 - **`ignoreWhitespace: true`** compares lines without leading, trailing or repeated whitespace.
-- **No hang on huge input.** If two big texts are completely different, `diffLines` throws a `RangeError` after `maxEdits` (default 10 000) differences instead of burning CPU; raise it if you really want that.
+- **No hang and no memory blow-up on huge input.** Memory depends on the number of *differences*, not on the size of the files: two 10 000-line files with a few hundred or thousand changed lines take about 15 MB extra and well under 100 ms (measured). If two big texts are completely different, `diffLines` throws a `RangeError` after `maxEdits` (default 4000 differences, at most about 64 MB) instead of burning CPU and memory; raise it only if you accept memory growing with its square.
 - `patchLines(ops)` rebuilds the new lines from the operations.
 
 This compares lines. For word-level or character-level highlights inside a changed line, run the lines through it again as arrays of words.

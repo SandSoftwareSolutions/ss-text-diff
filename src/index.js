@@ -11,9 +11,9 @@ const toLines = (text) => {
  * Myers' difference algorithm: the smallest set of added and removed lines that turns `a` into `b`.
  * Returns operations in order: `{ type: "equal" | "add" | "remove", lines: [...] }`, consecutive lines of the same kind grouped.
  * `a` and `b` are texts or arrays of lines. Option `ignoreWhitespace` compares lines without surrounding/repeated whitespace.
- * `maxEdits` (default 10000) stops runaway work on huge, completely different inputs by throwing a RangeError.
+ * `maxEdits` (default 4000) stops runaway work on huge, completely different inputs by throwing a RangeError. Memory grows with the square of the number of differences (about 4 bytes x d x d, so 64 MB at the default limit), not with the size of the files.
  */
-export function diffLines(a, b, { ignoreWhitespace = false, maxEdits = 10_000 } = {}) {
+export function diffLines(a, b, { ignoreWhitespace = false, maxEdits = 4000 } = {}) {
   const x = toLines(a);
   const y = toLines(b);
   const key = ignoreWhitespace ? (line) => line.trim().replace(/\s+/g, " ") : (line) => line;
@@ -61,10 +61,10 @@ function myers(a, b, maxEdits) {
   if (m === 0) return Array(n).fill("-");
   const max = Math.min(n + m, maxEdits);
   const offset = max + 1;
-  const trace = [];
+  const trace = []; // per round only the diagonals that can matter (-d..d), so memory grows with d squared, not with the input size
   let v = new Int32Array(2 * max + 3);
   for (let d = 0; d <= max; d++) {
-    trace.push(v.slice());
+    trace.push(v.slice(offset - d, offset + d + 1));
     for (let k = -d; k <= d; k += 2) {
       let x = k === -d || (k !== d && v[offset + k - 1] < v[offset + k + 1]) ? v[offset + k + 1] : v[offset + k - 1] + 1;
       let y = x - k;
@@ -73,22 +73,22 @@ function myers(a, b, maxEdits) {
         y++;
       }
       v[offset + k] = x;
-      if (x >= n && y >= m) return backtrack(trace, a, b, d, offset);
+      if (x >= n && y >= m) return backtrack(trace, a, b, d);
     }
   }
   throw new RangeError(`text-diff: more than ${max} differences; raise maxEdits if you really want to compare these`);
 }
 
-function backtrack(trace, a, b, depth, offset) {
+function backtrack(trace, a, b, depth) {
   const steps = [];
   let x = a.length;
   let y = b.length;
   for (let d = depth; d > 0; d--) {
-    const v = trace[d];
+    const v = trace[d]; // v[k + d] holds the value of diagonal k
     const k = x - y;
-    const down = k === -d || (k !== d && v[offset + k - 1] < v[offset + k + 1]);
+    const down = k === -d || (k !== d && v[d + k - 1] < v[d + k + 1]);
     const prevK = down ? k + 1 : k - 1;
-    const prevX = v[offset + prevK];
+    const prevX = v[d + prevK];
     const prevY = prevX - prevK;
     while (x > prevX && y > prevY) {
       steps.push("=");

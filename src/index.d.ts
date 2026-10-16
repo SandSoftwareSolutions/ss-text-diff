@@ -8,7 +8,7 @@ export interface DiffOp {
 export interface DiffOptions {
   /** Compare lines ignoring leading, trailing and repeated whitespace. */
   ignoreWhitespace?: boolean;
-  /** Give up (throw a RangeError) beyond this many differences. Default 10000. */
+  /** Give up (throw a RangeError) beyond this many differences. Default 4000 (about 64 MB at the limit). */
   maxEdits?: number;
 }
 

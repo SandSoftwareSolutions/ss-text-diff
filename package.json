@@ -1,0 +1,43 @@
+{
+  "name": "@sandsoftwaresolutions/text-diff",
+  "version": "0.1.0",
+  "description": "Line diff with Myers' algorithm and unified diff output that git apply accepts. Guards against runaway comparisons.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.js"
+    }
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test",
+    "pack:check": "npm pack --dry-run"
+  },
+  "keywords": [
+    "diff",
+    "patch",
+    "myers",
+    "unified-diff"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SandSoftwareSolutions/ss-text-diff.git"
+  },
+  "bugs": {
+    "url": "https://github.com/SandSoftwareSolutions/ss-text-diff/issues"
+  },
+  "homepage": "https://github.com/SandSoftwareSolutions/ss-text-diff#readme",
+  "publishConfig": {
+    "access": "public"
+  }
+}

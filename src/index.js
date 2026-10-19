@@ -14,9 +14,12 @@ const toLines = (text) => {
  * `maxEdits` (default 4000) stops runaway work on huge, completely different inputs by throwing a RangeError. Memory grows with the square of the number of differences (about 4 bytes x d x d, so 64 MB at the default limit), not with the size of the files.
  */
 export function diffLines(a, b, { ignoreWhitespace = false, maxEdits = 4000 } = {}) {
+  if (!(Number.isInteger(maxEdits) && maxEdits >= 0) && maxEdits !== Infinity) throw new RangeError("text-diff: maxEdits must be a whole number of at least 0");
   const x = toLines(a);
   const y = toLines(b);
-  const key = ignoreWhitespace ? (line) => line.trim().replace(/\s+/g, " ") : (line) => line;
+  const squeeze = (line) => line.trim().replace(/\s+/g, " ");
+  // (a line marked NO_EOL by unifiedDiff keeps its mark, so "b" and "b " still match under ignoreWhitespace)
+  const key = ignoreWhitespace ? (line) => (line.endsWith(NO_EOL) ? squeeze(line.slice(0, -NO_EOL.length)) + NO_EOL : squeeze(line)) : (line) => line;
   const kx = x.map(key);
   const ky = y.map(key);
   let start = 0;
@@ -107,14 +110,36 @@ function backtrack(trace, a, b, depth) {
   return steps.reverse();
 }
 
+// Whether a text argument has no newline at its end ("a\nb"): the unified format marks that with "\ No newline at end of file".
+const NO_EOL = "\u0000no-eol\u0000";
+const lacksFinalNewline = (text) => typeof text === "string" && text !== "" && !text.endsWith("\n");
+// "auto": CRLF when every line of the old text (or, if that has no newline, the new text) ends in CRLF, else LF.
+const detectEol = (text) => (typeof text !== "string" || !text.includes("\n") ? null : /(?<!\r)\n/.test(text) ? "\n" : "\r\n");
+
 /**
  * A diff in the unified format that `git diff` and `patch` use. Returns an empty string when nothing differs.
- * Options: `context` (unchanged lines around each change, default 3), `aName` and `bName` for the `---` and `+++` lines.
+ * Options: `context` (unchanged lines around each change, default 3), `aName` and `bName` for the `---` and `+++` lines, and `eol`
+ * ("auto" (default), "\n" or "\r\n"): the line ending of the files the patch is for. "auto" uses CRLF when the old text (or, if that has
+ * no newline, the new text), given as a string, has CRLF on every line. A text (string) that does not end in a newline gets `\ No newline at end of file`, and a difference
+ * in only that final newline is a change in the diff.
  */
-export function unifiedDiff(a, b, { context = 3, aName = "a", bName = "b", ...options } = {}) {
-  const ops = diffLines(a, b, options);
+export function unifiedDiff(a, b, { context = 3, aName = "a", bName = "b", eol = "auto", ...options } = {}) {
+  if (!["auto", "\n", "\r\n"].includes(eol)) throw new RangeError('text-diff: eol must be "auto", "\\n" or "\\r\\n"');
+  const lineEnd = eol === "auto" ? (detectEol(a) ?? detectEol(b) ?? "\n") : eol;
+  const cr = lineEnd === "\r\n" ? "\r" : "";
+  const noEolA = lacksFinalNewline(a);
+  const noEolB = lacksFinalNewline(b);
+  // A last line without a newline is a different line from the same text with one (as in git): mark it while comparing.
+  const mark = (text, noEol) => {
+    const lines = toLines(text);
+    if (noEol && lines.length) lines[lines.length - 1] += NO_EOL;
+    return lines;
+  };
+  const ops = diffLines(mark(a, noEolA), mark(b, noEolB), options);
   if (ops.every((op) => op.type === "equal")) return "";
-  const rows = ops.flatMap((op) => op.lines.map((line) => ({ type: op.type, line })));
+  const rows = ops.flatMap((op) =>
+    op.lines.map((line) => (line.endsWith(NO_EOL) ? { type: op.type, line: line.slice(0, -NO_EOL.length), noEol: true } : { type: op.type, line }))
+  );
   let aLine = 1;
   let bLine = 1;
   for (const row of rows) {
@@ -140,7 +165,10 @@ export function unifiedDiff(a, b, { context = 3, aName = "a", bName = "b", ...op
     const aStart = aCount === 0 ? (slice[0].a - 1) : slice.find((r) => r.type !== "add").a;
     const bStart = bCount === 0 ? (slice[0].b - 1) : slice.find((r) => r.type !== "remove").b;
     out.push(`@@ -${aStart}${aCount === 1 ? "" : `,${aCount}`} +${bStart}${bCount === 1 ? "" : `,${bCount}`} @@`);
-    for (const r of slice) out.push(`${r.type === "add" ? "+" : r.type === "remove" ? "-" : " "}${r.line}`);
+    for (const r of slice) {
+      out.push(`${r.type === "add" ? "+" : r.type === "remove" ? "-" : " "}${r.line}${r.noEol ? "" : cr}`);
+      if (r.noEol) out.push("\\ No newline at end of file");
+    }
   }
   return `${out.join("\n")}\n`;
 }

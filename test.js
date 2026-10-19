@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -105,4 +106,60 @@ test("a hopeless comparison stops with a clear error instead of hanging", () => 
   const b = Array.from({ length: 300 }, (_, i) => `b${i}`);
   assert.throws(() => diffLines(a, b, { maxEdits: 100 }), /more than 100 differences/);
   assert.ok(diffLines(a, b).length > 0);
+});
+
+function applyWithGit(original, a, b, options) {
+  const dir = mkdtempSync(join(tmpdir(), "text-diff-"));
+  try {
+    writeFileSync(join(dir, "f.txt"), original);
+    writeFileSync(join(dir, "p.diff"), unifiedDiff(a, b, { aName: "a/f.txt", bName: "b/f.txt", ...options }));
+    execFileSync("git", ["apply", "--unsafe-paths", "-p1", "p.diff"], { cwd: dir, stdio: "pipe" });
+    return readFileSync(join(dir, "f.txt"), "utf8");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("files without a final newline get the 'No newline at end of file' marker and git apply accepts it", { skip: !hasGit() }, () => {
+  assert.equal(applyWithGit("a\nb", "a\nb", "a\nB"), "a\nB");
+  assert.equal(applyWithGit("a\nb\n", "a\nb\n", "a\nb"), "a\nb");
+  assert.equal(applyWithGit("a\nb", "a\nb", "a\nb\n"), "a\nb\n");
+  assert.equal(applyWithGit("a\nb\nc", "a\nb\nc", "a\nb\nc\nd"), "a\nb\nc\nd");
+  assert.equal(applyWithGit("", "", "x"), "x");
+  assert.match(unifiedDiff("a\nb", "a\nb\n"), /-b\n\\ No newline at end of file\n\+b\n/);
+  assert.equal(unifiedDiff("a\nb", "a\nb"), "");
+});
+
+test("CRLF files: the patch lines end in CRLF (eol auto) so git apply accepts them", { skip: !hasGit() }, () => {
+  const a = "one\r\ntwo\r\nthree\r\n";
+  const b = "one\r\nTWO\r\nthree\r\nfour\r\n";
+  assert.equal(applyWithGit(a, a, b), b);
+  assert.equal(applyWithGit("x\r\ny", "x\r\ny", "x\r\nz"), "x\r\nz");
+  assert.equal(applyWithGit("", "", "x\r\n", { eol: "\r\n" }), "x\r\n");
+  assert.ok(unifiedDiff(a, b).includes("-two\r\n"));
+  assert.ok(unifiedDiff("one\ntwo\n", "one\nTWO\n").includes("-two\n") && !unifiedDiff("one\ntwo\n", "one\nTWO\n").includes("\r"));
+  assert.throws(() => unifiedDiff("a", "b", { eol: "\r" }), RangeError);
+});
+
+test("random texts: diffLines is a minimal edit script and unifiedDiff applies with git (LF/CRLF, with and without final newline)", { skip: !hasGit() }, () => {
+  const alphabet = ["a", "b", "c", "", "  x", "--- y", "+z", "d d", "\tt"];
+  const pick = (n) => randomBytes(1)[0] % n;
+  for (let round = 0; round < 40; round++) {
+    const nl = pick(3) === 0 ? "\r\n" : "\n";
+    const A = Array.from({ length: pick(25) }, () => alphabet[pick(alphabet.length)]);
+    const B = A.filter(() => pick(4));
+    for (let k = pick(5); k > 0; k--) B.splice(pick(B.length + 1), 0, alphabet[pick(alphabet.length)]);
+    const ta = A.join(nl) + (A.length && pick(3) ? nl : "");
+    const tb = B.join(nl) + (B.length && pick(3) ? nl : "");
+    if ((A.length && A.at(-1) === "" && !ta.endsWith(nl)) || (B.length && B.at(-1) === "" && !tb.endsWith(nl))) continue; // "" as last line without newline is indistinguishable from a final newline
+    const ops = diffLines(A, B);
+    assert.deepEqual(patchLines(ops), B);
+    assert.deepEqual(ops.filter((o) => o.type !== "add").flatMap((o) => o.lines), A);
+    if (ta === tb) continue;
+    assert.equal(applyWithGit(ta, ta, tb), tb, JSON.stringify([ta, tb]));
+  }
+});
+
+test("maxEdits must be a whole number", () => {
+  for (const bad of [NaN, -1, 1.5, "5"]) assert.throws(() => diffLines("a", "b", { maxEdits: bad }), RangeError);
 });

@@ -77,7 +77,7 @@ test("our unified diff is accepted by `git apply` and `patch`", { skip: !hasGit(
     const b = a.replace("row 3\n", "row three\n").replace("row 20\n", "").replace("row 35\n", "row 35\nextra\nlines\n");
     writeFileSync(join(dir, "f.txt"), a);
     writeFileSync(join(dir, "p.diff"), unifiedDiff(a, b, { aName: "a/f.txt", bName: "b/f.txt" }));
-    execFileSync("git", ["apply", "--unsafe-paths", "-p1", "p.diff"], { cwd: dir });
+    execFileSync("git", ["-c", "core.autocrlf=false", "apply", "--unsafe-paths", "-p1", "p.diff"], { cwd: dir });
     assert.equal(readFileSync(join(dir, "f.txt"), "utf8"), b);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -113,7 +113,7 @@ function applyWithGit(original, a, b, options) {
   try {
     writeFileSync(join(dir, "f.txt"), original);
     writeFileSync(join(dir, "p.diff"), unifiedDiff(a, b, { aName: "a/f.txt", bName: "b/f.txt", ...options }));
-    execFileSync("git", ["apply", "--unsafe-paths", "-p1", "p.diff"], { cwd: dir, stdio: "pipe" });
+    execFileSync("git", ["-c", "core.autocrlf=false", "apply", "--unsafe-paths", "-p1", "p.diff"], { cwd: dir, stdio: "pipe" });
     return readFileSync(join(dir, "f.txt"), "utf8");
   } finally {
     rmSync(dir, { recursive: true, force: true });

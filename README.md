@@ -10,6 +10,8 @@ See exactly what changed between two texts: a list of added, removed and unchang
 npm install @sandsoftwaresolutions/text-diff
 ```
 
+Works with `import` and `require()`, and ships TypeScript types for both.
+
 ## Usage
 
 ```js
